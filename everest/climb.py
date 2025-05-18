@@ -10,19 +10,32 @@ class Climber:
     drop_at: int | None = None
     done: bool = False
 
-    async def step(self, ivan: 'Climber') -> None:
+    async def step(self, ivan: 'Climber') -> List[str]:
+        """Move one stage and perform drop if needed."""
+        log: List[str] = []
         if self.done:
-            return
+            return log
         if self.food <= 0:
             raise RuntimeError(f"{self.name} has no food to move")
+        prev = self.position
         await asyncio.sleep(0)  # allow context switch
         self.position += 1
         self.food -= 1
+        log.append(
+            f"{self.name}: P{prev}-P{self.position}, -1 еда. Объем еды в рюкзаке {self.food}."
+        )
         if self.drop_at is not None and self.position == self.drop_at:
-            # pass all remaining food to Ivan
-            ivan.food += self.food
-            self.food = 0
+            if self.food > 0:
+                ivan.food += self.food
+                log.append(
+                    f"{self.name}: P{self.position}, -{self.food} еда -> Иван. Объем еды в рюкзаке 0."
+                )
+                log.append(
+                    f"Иван: P{ivan.position}, +{self.food} еда. Объем еды в рюкзаке {ivan.food}."
+                )
+                self.food = 0
             self.done = True
+        return log
 
 async def simulate_climb(n: int) -> List[str]:
     """Simulate climb to summit n using minimal sherpas.
@@ -30,17 +43,17 @@ async def simulate_climb(n: int) -> List[str]:
     Returns a log of daily movements."""
     if n < 1:
         raise ValueError("n must be >=1")
-    ivan = Climber(name="Ivan", food=1)
-    sherpas = [Climber(name=f"Sherpa{i}", food=i+1, drop_at=i) for i in range(1, n)]
+    ivan = Climber(name="Иван", food=1)
+    sherpas = [Climber(name=f"Шерп{i}", food=i + 1, drop_at=i) for i in range(1, n)]
     log: List[str] = []
 
     for day in range(1, n + 1):
-        await asyncio.gather(
-            ivan.step(ivan),
-            *(s.step(ivan) for s in sherpas),
+        log.append(f"День {day}")
+        results = await asyncio.gather(
+            ivan.step(ivan), *(s.step(ivan) for s in sherpas)
         )
-        positions = [f"{c.name}@{c.position}{' (done)' if c.done else ''}" for c in [ivan] + sherpas]
-        log.append(f"Day {day}: " + ", ".join(positions))
+        for entry in results:
+            log.extend(entry)
     if ivan.position != n:
         raise RuntimeError("Ivan failed to reach the summit")
     # ensure no sherpa reached the summit
